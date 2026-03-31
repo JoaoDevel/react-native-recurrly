@@ -6,6 +6,7 @@ export default function SignIn() {
     <View className="flex-1 justify-center items-center">
       <Text>Sign In</Text>
       <Link href="/(auth)/sign-up">Create Account</Link>
+      <Link href="/">Go Home</Link>
     </View>
   );
 }
