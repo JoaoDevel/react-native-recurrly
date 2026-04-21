@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import "../global.css";
 
 export default function RootLayout() {
+  // Load fonts and keep the splash screen visible while loading
   const [fontsLoaded] = useFonts({
     "sans-regular": require("../assets/fonts/PlusJakartaSans-Regular.ttf"),
     "sans-medium": require("../assets/fonts/PlusJakartaSans-Medium.ttf"),
