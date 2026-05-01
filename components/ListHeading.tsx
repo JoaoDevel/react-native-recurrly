@@ -13,3 +13,4 @@ export default function ListHeading({ title }: ListHeadingProps) {
     </View>
   );
 }
+

@@ -4,42 +4,99 @@ import UpcomingSubscriptionCard from "@/components/UpcomingSubscriptionCard";
 import {
   HOME_BALANCE,
   HOME_SUBSCRIPTIONS,
-  HOME_USER,
   UPCOMING_SUBSCRIPTIONS,
 } from "@/constants/data";
 import { icons } from "@/constants/icons";
-import images from "@/constants/images";
+import { colors } from "@/constants/theme";
 import { formatCurrency } from "@/lib/utils";
+import { useUser } from "@clerk/expo";
 import dayjs from "dayjs";
 import { styled } from "nativewind";
-import { useState } from "react";
-import { FlatList, Image, Text, View } from "react-native";
+import { useMemo, useState } from "react";
+import { ActivityIndicator, FlatList, Image, Text, View } from "react-native";
 import { SafeAreaView as RNSafeAreaView } from "react-native-safe-area-context";
 
 const SafeAreaView = styled(RNSafeAreaView);
 
+function displayNameFromUser(
+  user: NonNullable<ReturnType<typeof useUser>["user"]>,
+): string {
+  const combined = [user.firstName, user.lastName].filter(Boolean).join(" ");
+  return (
+    user.fullName ||
+    combined ||
+    user.username ||
+    user.primaryEmailAddress?.emailAddress?.split("@")[0] ||
+    "Usuario"
+  );
+}
+
+function initialsFromDisplayName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]![0] ?? ""}${parts[1]![0] ?? ""}`.toUpperCase();
+  }
+  const single = parts[0];
+  if (single && single.length >= 2) return single.slice(0, 2).toUpperCase();
+  if (single) return single[0]!.toUpperCase();
+  return "?";
+}
+
 export default function App() {
+  const { user, isLoaded } = useUser();
   const [expandedSubscriptionId, setExpandedSubscriptionId] = useState<
     string | null
   >(null);
+
+  const displayName = useMemo(
+    () => (user ? displayNameFromUser(user) : ""),
+    [user],
+  );
+
+  const avatarInitials = useMemo(
+    () => initialsFromDisplayName(displayName),
+    [displayName],
+  );
 
   return (
     <SafeAreaView className="flex-1  bg-background p-5">
       <FlatList
         ListHeaderComponent={() => (
           <>
-            <View className="mb-2.5 flex-row items-center justify-between">
-              <View className="flex-row items-center">
-                <Image
-                  source={images.avatar}
-                  className="h-12 w-12 rounded-full"
-                />
-                <Text className="ml-3 text-xl font-sans-bold text-primary">
-                  {HOME_USER.name}
-                </Text>
+            <View className="mb-2.5 flex-row items-center justify-between gap-3">
+              <View className="min-w-0 flex-1 flex-row items-center">
+                {!isLoaded || !user ? (
+                  <>
+                    <View className="h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                      <ActivityIndicator size="small" color={colors.accent} />
+                    </View>
+                    <View className="ml-3 h-7 flex-1 max-w-[70%] rounded-md bg-primary/10" />
+                  </>
+                ) : (
+                  <>
+                    {user.imageUrl ? (
+                      <Image
+                        source={{ uri: user.imageUrl }}
+                        className="h-12 w-12 rounded-full"
+                      />
+                    ) : (
+                      <View className="h-12 w-12 items-center justify-center rounded-full bg-accent/25">
+                        <Text className="text-base font-sans-bold text-accent">
+                          {avatarInitials}
+                        </Text>
+                      </View>
+                    )}
+                    <Text
+                      className="ml-3 flex-1 text-xl font-sans-bold text-primary"
+                      numberOfLines={1}
+                    >
+                      {displayName}
+                    </Text>
+                  </>
+                )}
               </View>
 
-              <Image source={icons.add} className="h-6 w-6" />
+              <Image source={icons.add} className="h-6 w-6 shrink-0" />
             </View>
 
             <View className="my-2.5 min-h-50 justify-between rounded-bl-4xl rounded-tr-4xl bg-accent p-6">
