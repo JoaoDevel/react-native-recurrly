@@ -6,7 +6,7 @@ import {
 } from "@/lib/auth";
 import { useAuth, useSignUp } from "@clerk/expo";
 import { Link, type Href, useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
 export default function SignUp() {
@@ -19,8 +19,17 @@ export default function SignUp() {
   const [verificationCode, setVerificationCode] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [resendLocked, setResendLocked] = useState(false);
+  const resendCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isSubmitting = fetchStatus === "fetching";
+
+  useEffect(() => {
+    return () => {
+      if (resendCooldownRef.current) clearTimeout(resendCooldownRef.current);
+    };
+  }, []);
+
   const waitingForCode =
     signUp.status === "missing_requirements" &&
     signUp.unverifiedFields.includes("email_address") &&
@@ -42,6 +51,50 @@ export default function SignUp() {
         router.replace(nextUrl as Href);
       },
     });
+  };
+
+  const startResendCooldown = (ms: number) => {
+    if (resendCooldownRef.current) clearTimeout(resendCooldownRef.current);
+    setResendLocked(true);
+    resendCooldownRef.current = setTimeout(() => {
+      setResendLocked(false);
+      resendCooldownRef.current = null;
+    }, ms);
+  };
+
+  /**
+   * Sends the email verification code; handles Clerk API errors and thrown errors.
+   * @returns whether the code was sent successfully
+   */
+  const sendEmailVerificationCode = async (options?: {
+    lockResendMs?: number;
+  }): Promise<boolean> => {
+    try {
+      const result = (await signUp.verifications.sendEmailCode()) as
+        | { error?: unknown }
+        | undefined
+        | null;
+
+      if (result && typeof result === "object" && "error" in result && result.error) {
+        console.warn("signUp.verifications.sendEmailCode Clerk error", result.error);
+        const parsed = toClerkFieldErrors(result.error);
+        setFormError(
+          parsed.form ??
+            "Could not send the verification code. You may be rate-limited—wait a minute and try again.",
+        );
+        if (options?.lockResendMs) startResendCooldown(options.lockResendMs);
+        return false;
+      }
+
+      return true;
+    } catch (e) {
+      console.warn("signUp.verifications.sendEmailCode failed", e);
+      setFormError(
+        "We could not send the verification email. Wait a moment, then tap \"Send new code\" to try again.",
+      );
+      if (options?.lockResendMs) startResendCooldown(options.lockResendMs);
+      return false;
+    }
   };
 
   const handleCreateAccount = async () => {
@@ -72,7 +125,10 @@ export default function SignUp() {
         return;
       }
 
-      await signUp.verifications.sendEmailCode();
+      const codeSent = await sendEmailVerificationCode();
+      if (!codeSent) {
+        return;
+      }
     } catch {
       setFormError("Could not create your account. Please try again.");
     }
@@ -90,18 +146,23 @@ export default function SignUp() {
     setFieldErrors((current) => ({ ...current, code: "" }));
 
     try {
-      const { error } = await signUp.verifications.verifyEmailCode({
+      const completeSignUp = await signUp.verifications.verifyEmailCode({
         code: verificationCode.trim(),
       });
 
-      if (error) {
-        const parsedErrors = toClerkFieldErrors(error);
+      if (completeSignUp.error) {
+        const parsedErrors = toClerkFieldErrors(completeSignUp.error);
         setFieldErrors((current) => ({ ...current, ...parsedErrors }));
         setFormError(parsedErrors.form ?? null);
         return;
       }
 
-      if (signUp.status === "complete") {
+      // Prefer status from the verify response; typings only expose `error`, but the
+      // resource may include `status` immediately after verification.
+      const verification = completeSignUp as typeof completeSignUp & { status?: string };
+      const statusAfterVerify = verification.status ?? signUp.status;
+
+      if (statusAfterVerify === "complete") {
         await navigateToApp();
       }
     } catch {
@@ -202,11 +263,22 @@ export default function SignUp() {
             </Pressable>
 
             <Pressable
-              className="mt-3 items-center rounded-2xl border border-border bg-background py-3"
-              onPress={() => signUp.verifications.sendEmailCode()}
+              className="mt-3 items-center rounded-2xl border border-border bg-background py-3 disabled:opacity-50"
+              disabled={isSubmitting || resendLocked}
+              onPress={async () => {
+                setFormError(null);
+                await sendEmailVerificationCode({ lockResendMs: 15_000 });
+              }}
             >
-              <Text className="font-sans-semibold text-base text-primary">Send new code</Text>
+              <Text className="font-sans-semibold text-base text-primary">
+                {resendLocked ? "Wait to resend..." : "Send new code"}
+              </Text>
             </Pressable>
+            {resendLocked && (
+              <Text className="mt-2 font-sans text-center text-sm text-primary/70">
+                Too many attempts? Wait a few seconds before requesting another code.
+              </Text>
+            )}
           </>
         )}
 
