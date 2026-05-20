@@ -1,4 +1,5 @@
 import { toClerkFieldErrors, validateEmail, validatePassword } from "@/lib/auth";
+import { posthog } from "@/lib/posthog";
 import { useSignIn } from "@clerk/expo";
 import { Link, type Href, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
@@ -49,10 +50,15 @@ export default function SignIn() {
         const parsedErrors = toClerkFieldErrors(error);
         setFieldErrors(parsedErrors);
         setFormError(parsedErrors.form ?? null);
+        posthog.capture("sign_in_failed", { error_message: parsedErrors.form ?? "unknown" });
         return;
       }
 
       if (signIn.status === "complete") {
+        posthog.identify(emailAddress.trim().toLowerCase(), {
+          $set: { email: emailAddress.trim().toLowerCase() },
+        });
+        posthog.capture("sign_in_completed");
         await signIn.finalize({
           navigate: ({ decorateUrl }) => {
             const nextUrl = decorateUrl("/(tabs)");
@@ -62,6 +68,7 @@ export default function SignIn() {
       }
     } catch {
       setFormError("Could not sign in. Please try again.");
+      posthog.capture("sign_in_failed", { error_message: "unexpected_error" });
     }
   };
 

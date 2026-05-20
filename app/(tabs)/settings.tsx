@@ -1,3 +1,4 @@
+import { posthog } from "@/lib/posthog";
 import { useAuth } from "@clerk/expo";
 import { styled } from "nativewind";
 import { useState } from "react";
@@ -15,6 +16,8 @@ export default function Settings() {
     setError(null);
     setSigningOut(true);
     try {
+      posthog.capture("sign_out_completed");
+      posthog.reset();
       await signOut();
     } catch {
       setError("Could not sign out. Please try again.");

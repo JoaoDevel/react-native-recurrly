@@ -4,6 +4,7 @@ import {
   validateEmail,
   validatePassword,
 } from "@/lib/auth";
+import { posthog } from "@/lib/posthog";
 import { useAuth, useSignUp } from "@clerk/expo";
 import { Link, type Href, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -125,10 +126,13 @@ export default function SignUp() {
         return;
       }
 
+      posthog.capture("sign_up_started", { email: emailAddress.trim().toLowerCase() });
+
       const codeSent = await sendEmailVerificationCode();
       if (!codeSent) {
         return;
       }
+      posthog.capture("sign_up_email_verification_sent", { email: emailAddress.trim().toLowerCase() });
     } catch {
       setFormError("Could not create your account. Please try again.");
     }
@@ -163,6 +167,11 @@ export default function SignUp() {
       const statusAfterVerify = verification.status ?? signUp.status;
 
       if (statusAfterVerify === "complete") {
+        posthog.identify(emailAddress.trim().toLowerCase(), {
+          $set: { email: emailAddress.trim().toLowerCase() },
+          $set_once: { sign_up_date: new Date().toISOString() },
+        });
+        posthog.capture("sign_up_completed", { email: emailAddress.trim().toLowerCase() });
         await navigateToApp();
       }
     } catch {
